@@ -164,7 +164,7 @@ impl MockWebSocketsServerStopHandle {
 mod tests {
     use super::*;
     use masq_lib::messages::UiSetupResponseValueStatus::Set;
-    use masq_lib::messages::{FromMessageBody, ToMessageBody, UiSetupResponse, UiUnmarshalError};
+    use masq_lib::messages::{FromMessageBody, ToMessageBody, UiSetupResponse, UiUnmarshalError, UiSetupValuesAndErrors};
     use masq_lib::messages::{UiSetupResponseValue, NODE_UI_PROTOCOL};
     use masq_lib::test_utils::ui_connection::UiConnection;
     use masq_lib::utils::find_free_port;
@@ -173,8 +173,7 @@ mod tests {
     #[test]
     fn two_in_two_out() {
         let port = find_free_port();
-        let first_expected_response = UiSetupResponse {
-            running: true,
+        let first_expected_response = UiSetupResponse::AlreadyRunning (UiSetupValuesAndErrors {
             values: vec![UiSetupResponseValue {
                 name: "direction".to_string(),
                 value: "to UI".to_string(),
@@ -184,7 +183,7 @@ mod tests {
                 ("param1".to_string(), "reason1".to_string()),
                 ("param2".to_string(), "reason2".to_string()),
             ],
-        }
+        })
         .tmb(1);
         let second_expected_response = UiUnmarshalError {
             message: "message".to_string(),
@@ -198,8 +197,7 @@ mod tests {
         let mut connection = UiConnection::new(port, NODE_UI_PROTOCOL);
         let first_actual_response: UiSetupResponse = connection
             .transact_with_context_id(
-                UiSetupResponse {
-                    running: true,
+                UiSetupResponse::AlreadyRunning (UiSetupValuesAndErrors {
                     values: vec![UiSetupResponseValue {
                         name: "direction".to_string(),
                         value: "to UI".to_string(),
@@ -209,7 +207,7 @@ mod tests {
                         ("param1".to_string(), "reason1".to_string()),
                         ("param2".to_string(), "reason2".to_string()),
                     ],
-                },
+                }),
                 1234,
             )
             .unwrap();
@@ -222,8 +220,7 @@ mod tests {
             .0;
         assert_eq!(
             actual_body,
-            UiSetupResponse {
-                running: true,
+            UiSetupResponse::AlreadyRunning (UiSetupValuesAndErrors {
                 values: vec![UiSetupResponseValue {
                     name: "direction".to_string(),
                     value: "to UI".to_string(),
@@ -233,7 +230,7 @@ mod tests {
                     ("param1".to_string(), "reason1".to_string()),
                     ("param2".to_string(), "reason2".to_string()),
                 ]
-            }
+            })
         );
         assert_eq!(
             (first_actual_response, 1),

@@ -433,7 +433,7 @@ mod tests {
         MockWebSocketsServer, MockWebSocketsServerStopHandle,
     };
     use crossbeam_channel::TryRecvError;
-    use masq_lib::messages::{FromMessageBody, ToMessageBody};
+    use masq_lib::messages::{FromMessageBody, ToMessageBody, UiSetupValuesAndErrors};
     use masq_lib::messages::{
         UiFinancialsRequest, UiFinancialsResponse, UiRedirect, UiSetupBroadcast, UiSetupRequest,
         UiSetupResponse, UiShutdownRequest, UiShutdownResponse, UiStartOrder, UiStartResponse,
@@ -686,11 +686,10 @@ mod tests {
     #[test]
     fn handles_listener_fallback_from_node() {
         let daemon_port = find_free_port();
-        let expected_incoming_message = UiSetupResponse {
-            running: false,
+        let expected_incoming_message = UiSetupResponse::NoChanges (UiSetupValuesAndErrors{
             values: vec![],
             errors: vec![],
-        }
+        })
         .tmb(4);
         let daemon = MockWebSocketsServer::new(daemon_port)
             .queue_response(expected_incoming_message.clone());
@@ -804,11 +803,10 @@ mod tests {
     #[test]
     fn handles_fatal_reception_failure() {
         let daemon_port = find_free_port();
-        let expected_incoming_message = UiSetupResponse {
-            running: false,
+        let expected_incoming_message = UiSetupResponse::NoChanges (UiSetupValuesAndErrors{
             values: vec![],
             errors: vec![],
-        }
+        })
         .tmb(4);
         let daemon = MockWebSocketsServer::new(daemon_port)
             .queue_response(expected_incoming_message.clone());
@@ -973,11 +971,10 @@ mod tests {
 
     #[test]
     fn handles_response_to_nonexistent_conversation() {
-        let incoming_message = UiSetupResponse {
-            running: false,
+        let incoming_message = UiSetupResponse::NoChanges (UiSetupValuesAndErrors{
             values: vec![],
             errors: vec![],
-        }
+        })
         .tmb(3);
         let (conversation_tx, conversation_rx) = unbounded();
         let mut inner = make_inner();
@@ -995,11 +992,10 @@ mod tests {
 
     #[test]
     fn handles_response_to_dead_conversation() {
-        let incoming_message = UiSetupResponse {
-            running: false,
+        let incoming_message = UiSetupResponse::NoChanges (UiSetupValuesAndErrors {
             values: vec![],
             errors: vec![],
-        }
+        })
         .tmb(4);
         let (conversation_tx, _) = unbounded();
         let mut inner = make_inner();

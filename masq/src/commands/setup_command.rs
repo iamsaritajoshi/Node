@@ -3,10 +3,11 @@
 use crate::command_context::CommandContext;
 use crate::commands::commands_common::{transaction, Command, CommandError};
 use clap::{value_t, App, SubCommand};
-use masq_lib::messages::{UiSetupRequest, UiSetupRequestValue, UiSetupResponse, SETUP_ERROR};
+use masq_lib::messages::{UiSetupRequest, UiSetupRequestValue, UiSetupResponse, SETUP_ERROR, UiSetupResponseValue};
 use masq_lib::shared_schema::shared_app;
 use masq_lib::utils::index_of_from;
-use std::fmt::Debug;
+use std::fmt::{Debug};
+use std::io::{Write};
 
 pub fn setup_subcommand() -> App<'static, 'static> {
     shared_app(SubCommand::with_name("setup")
@@ -25,40 +26,15 @@ impl Command for SetupCommand {
         };
         let result: Result<UiSetupResponse, CommandError> = transaction(out_message, context);
         match result {
-            Ok(mut response) => {
-                response.values.sort_by(|a, b| {
-                    a.name
-                        .partial_cmp(&b.name)
-                        .expect("String comparison failed")
-                });
-                writeln!(
-                    context.stdout(),
-                    "NAME                      VALUE                                                            STATUS"
-                )
-                .expect("writeln! failed");
-                response.values.into_iter().for_each(|value| {
-                    writeln!(
-                        context.stdout(),
-                        "{:26}{:65}{:?}",
-                        value.name,
-                        value.value,
-                        value.status
-                    )
-                    .expect("writeln! failed")
-                });
-                if !response.errors.is_empty() {
-                    writeln!(context.stdout(), "\nERRORS:").expect("writeln! failed");
-                    response.errors.into_iter().for_each(|(parameter, reason)| {
-                        writeln!(context.stdout(), "{:26}{}", parameter, reason)
-                            .expect("writeln! failed")
-                    })
-                }
-                if response.running {
-                    writeln!(context.stdout(), "\nNOTE: no changes were made to the setup because the Node is currently running.")
-                        .expect ("writeln! failed");
-                }
+            Ok(UiSetupResponse::ExpectBroadcast) => unimplemented! ("Don't print prompt"),
+            Ok(UiSetupResponse::NoChanges (ve)) => {
+                display_setup_state(ve.values, ve.errors, false, context.stdout());
                 Ok(())
-            }
+            },
+            Ok(UiSetupResponse::AlreadyRunning (ve)) => {
+                display_setup_state(ve.values, ve.errors, true, context.stdout());
+                Ok(())
+            },
             Err(CommandError::Payload(err, msg)) if err == SETUP_ERROR => {
                 writeln!(context.stderr(), "{}", msg).expect("writeln! failed");
                 Ok(())
@@ -105,12 +81,46 @@ impl SetupCommand {
     }
 }
 
+pub fn display_setup_state (mut values: Vec<UiSetupResponseValue>, errors: Vec<(String, String)>, running: bool, stdout: &mut dyn Write) {
+    values.sort_by(|a, b| {
+        a.name
+            .partial_cmp(&b.name)
+            .expect("String comparison failed")
+    });
+    writeln!(
+        stdout,
+        "NAME                      VALUE                                                            STATUS"
+    )
+        .expect("writeln! failed");
+    values.into_iter().for_each(|value| {
+        writeln!(
+            stdout,
+            "{:26}{:65}{:?}",
+            value.name,
+            value.value,
+            value.status
+        )
+            .expect("writeln! failed")
+    });
+    if !errors.is_empty() {
+        writeln!(stdout, "\nERRORS:").expect("writeln! failed");
+        errors.into_iter().for_each(|(parameter, reason)| {
+            writeln!(stdout, "{:26}{}", parameter, reason)
+                .expect("writeln! failed")
+        })
+    }
+    if running {
+        writeln!(stdout, "\nNOTE: no changes were made to the setup because the Node is currently running.")
+            .expect ("writeln! failed");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::command_factory::{CommandFactory, CommandFactoryReal};
     use crate::test_utils::mocks::CommandContextMock;
-    use masq_lib::messages::ToMessageBody;
+    use masq_lib::messages::{ToMessageBody, UiSetupValuesAndErrors};
     use masq_lib::messages::UiSetupResponseValueStatus::{Configured, Default, Set};
     use masq_lib::messages::{UiSetupRequest, UiSetupResponse, UiSetupResponseValue};
     use std::sync::{Arc, Mutex};
@@ -136,14 +146,13 @@ mod tests {
         let transact_params_arc = Arc::new(Mutex::new(vec![]));
         let mut context = CommandContextMock::new()
             .transact_params(&transact_params_arc)
-            .transact_result(Ok(UiSetupResponse {
-                running: false,
+            .transact_result(Ok(UiSetupResponse::NoChanges (UiSetupValuesAndErrors{
                 values: vec![
                     UiSetupResponseValue::new("chain", "ropsten", Configured),
                     UiSetupResponseValue::new("neighborhood-mode", "zero-hop", Set),
                 ],
                 errors: vec![],
-            }
+            })
             .tmb(0)));
         let stdout_arc = context.stdout_arc();
         let stderr_arc = context.stderr_arc();
@@ -186,15 +195,14 @@ neighborhood-mode         zero-hop                                              
         let transact_params_arc = Arc::new(Mutex::new(vec![]));
         let mut context = CommandContextMock::new()
             .transact_params(&transact_params_arc)
-            .transact_result(Ok(UiSetupResponse {
-                running: true,
+            .transact_result(Ok(UiSetupResponse::AlreadyRunning (UiSetupValuesAndErrors{
                 values: vec![
                     UiSetupResponseValue::new("chain", "ropsten", Set),
                     UiSetupResponseValue::new("neighborhood-mode", "zero-hop", Configured),
                     UiSetupResponseValue::new("clandestine-port", "8534", Default),
                 ],
                 errors: vec![("ip".to_string(), "Nosir, I don't like it.".to_string())],
-            }
+            })
             .tmb(0)));
         let stdout_arc = context.stdout_arc();
         let stderr_arc = context.stderr_arc();
