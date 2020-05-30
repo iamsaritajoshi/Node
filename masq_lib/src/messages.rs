@@ -8,6 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::export::fmt::Error;
 use serde::export::Formatter;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
 
@@ -237,33 +238,42 @@ impl UiSetupResponseValue {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct UiSetupResponse {
-    pub running: bool,
+pub struct UiSetupValuesAndErrors {
     pub values: Vec<UiSetupResponseValue>,
     pub errors: Vec<(String, String)>,
+}
+
+impl UiSetupValuesAndErrors {
+    pub fn new(values: HashMap<String, UiSetupResponseValue>, errors: ConfiguratorError) -> Self {
+        Self {
+            values: values.into_iter().map(|(_, v)| v).collect(),
+            errors: errors
+                .param_errors
+                .into_iter()
+                .map(|pe| (pe.parameter, pe.reason))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub enum UiSetupResponse {
+    AlreadyRunning(UiSetupValuesAndErrors),
+    NoChanges(UiSetupValuesAndErrors),
+    ExpectBroadcast,
 }
 conversation_message!(UiSetupResponse, "setup");
 impl UiSetupResponse {
     pub fn new(
         running: bool,
-        triples: Vec<(&str, &str, UiSetupResponseValueStatus)>,
-        errors: ConfiguratorError,
+        values: HashMap<String, UiSetupResponseValue>,
+        configurator_errors: ConfiguratorError,
     ) -> UiSetupResponse {
-        UiSetupResponse {
-            running,
-            values: triples
-                .into_iter()
-                .map(|(name, value, status)| UiSetupResponseValue {
-                    name: name.to_string(),
-                    value: value.to_string(),
-                    status,
-                })
-                .collect(),
-            errors: errors
-                .param_errors
-                .into_iter()
-                .map(|param_error| (param_error.parameter, param_error.reason))
-                .collect(),
+        let values_and_errors = UiSetupValuesAndErrors::new(values, configurator_errors);
+        if running {
+            UiSetupResponse::AlreadyRunning(values_and_errors)
+        } else {
+            UiSetupResponse::NoChanges(values_and_errors)
         }
     }
 }
@@ -275,15 +285,6 @@ pub struct UiSetupBroadcast {
     pub errors: Vec<(String, String)>,
 }
 fire_and_forget_message!(UiSetupBroadcast, "setup");
-impl UiSetupBroadcast {
-    pub fn new(response: &UiSetupResponse) -> UiSetupBroadcast {
-        UiSetupBroadcast {
-            running: response.running,
-            values: response.values.clone(),
-            errors: response.errors.clone(),
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct UiStartOrder {}
@@ -376,6 +377,7 @@ conversation_message!(UiShutdownResponse, "shutdown");
 mod tests {
     use super::*;
     use crate::messages::UiMessageError::{DeserializationError, PayloadError, UnexpectedMessage};
+    use crate::messages::UiSetupResponseValueStatus::Configured;
     use crate::ui_gateway::MessagePath::{Conversation, FireAndForget};
 
     #[test]
@@ -707,5 +709,51 @@ mod tests {
                 0
             ))
         );
+    }
+
+    #[test]
+    fn ui_setup_response_constructor_for_already_running() {
+        let subject = UiSetupResponse::new(
+            true,
+            vec![("name", "value", Configured)],
+            ConfiguratorError::required("parameter", "reason"),
+        );
+
+        match subject {
+            UiSetupResponse::AlreadyRunning(ve) => {
+                assert_eq!(
+                    ve.values,
+                    vec![UiSetupResponseValue::new("name", "value", Configured)]
+                );
+                assert_eq!(
+                    ve.errors,
+                    vec![("parameter".to_string(), "reason".to_string())]
+                );
+            }
+            x => panic!("Expected AlreadyRunning, got {:?}", x),
+        }
+    }
+
+    #[test]
+    fn ui_setup_response_constructor_for_no_changes() {
+        let subject = UiSetupResponse::new(
+            false,
+            vec![("name", "value", Configured)],
+            ConfiguratorError::required("parameter", "reason"),
+        );
+
+        match subject {
+            UiSetupResponse::NoChanges(ve) => {
+                assert_eq!(
+                    ve.values,
+                    vec![UiSetupResponseValue::new("name", "value", Configured)]
+                );
+                assert_eq!(
+                    ve.errors,
+                    vec![("parameter".to_string(), "reason".to_string())]
+                );
+            }
+            x => panic!("Expected NoChanges, got {:?}", x),
+        }
     }
 }
